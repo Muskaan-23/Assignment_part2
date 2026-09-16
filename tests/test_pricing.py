@@ -52,12 +52,23 @@ def test_multiple_ticket_tiers():
 
 
 def test_sold_out_tier():
-    config = build_config()
-    config.tiers["Silver"] = TierConfig(name="Silver", price=Decimal("200.00"), availability=0)
+    config = PricingConfig(
+        tiers={
+            "Silver": TierConfig(name="Silver", price=Decimal("200.00"), availability=0),
+            "Gold": TierConfig(name="Gold", price=Decimal("300.00"), availability=8),
+            "Recliner": TierConfig(name="Recliner", price=Decimal("450.00"), availability=5),
+        },
+        festival_discount=Decimal("100.00"),
+        member_discount_rate=Decimal("0.10"),
+        member_discount_cap=Decimal("200.00"),
+        convenience_fee_per_ticket=Decimal("15.00"),
+        gst_rate=Decimal("0.18"),
+    )
     request = BookingRequest(tickets=[TicketRequest(tier="Silver", quantity=1)], member=False, festival_offer=False)
 
     with pytest.raises(ValueError, match="Silver tickets are sold out"):
         calculate_booking(config, request)
+
 
 
 def test_insufficient_availability():

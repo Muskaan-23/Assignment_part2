@@ -24,7 +24,7 @@ def normalize_price(value: Any) -> Decimal:
 
     cleaned = text
     cleaned = cleaned.replace("₹", "")
-    cleaned = re.sub(r"(?i)\b(?:inr|rupees|rs)\.?\b", "", cleaned)
+    cleaned = re.sub(r"(?i)\b(?:inr|rupees|rs)\b\.?", "", cleaned)
     cleaned = cleaned.replace(" ", "")
     cleaned = cleaned.replace(",", "")
 

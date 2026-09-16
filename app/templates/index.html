@@ -3,188 +3,1337 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Multiplex Pricing Engine</title>
+    <title>CinePrice — Multiplex Pricing Engine</title>
+    <meta name="description" content="Multiplex booking counter: import a messy seat-class price list, clean it, apply it to the live pricing engine, then book tickets with exact paisa billing." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <style>
+      /* ── Tokens ───────────────────────────────────────────────── */
+      :root {
+        --bg:        #0a0c14;
+        --card:      #111623;
+        --card2:     #161c2e;
+        --border:    rgba(255,255,255,0.07);
+        --gold:      #f5c842;
+        --gold-d:    #c9a520;
+        --gold-glow: rgba(245,200,66,0.18);
+        --blue:      #3b82f6;
+        --green:     #22c55e;
+        --red:       #ef4444;
+        --amber:     #f59e0b;
+        --text:      #e2e8f0;
+        --muted:     #64748b;
+        --dim:       #94a3b8;
+        --r:         14px;
+        --rs:        8px;
+        --shadow:    0 8px 40px rgba(0,0,0,0.6);
+      }
+
+      /* ── Reset ────────────────────────────────────────────────── */
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html { scroll-behavior: smooth; }
       body {
-        font-family: Arial, sans-serif;
-        background: #f4f6f8;
-        margin: 0;
-        padding: 40px;
-        color: #1f2937;
+        font-family: 'Inter', system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        line-height: 1.6;
+        background-image:
+          radial-gradient(ellipse 80% 40% at 50% -10%, rgba(245,200,66,0.07) 0%, transparent 70%),
+          linear-gradient(rgba(255,255,255,0.014) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.014) 1px, transparent 1px);
+        background-size: 100% 100%, 48px 48px, 48px 48px;
       }
-      .container {
-        max-width: 900px;
-        margin: 0 auto;
-        background: #fff;
-        border-radius: 12px;
-        padding: 30px;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+
+      .page { max-width: 1060px; margin: 0 auto; padding: 32px 20px 72px; }
+
+      /* ── Header ───────────────────────────────────────────────── */
+      .hdr { display: flex; align-items: center; gap: 16px; margin-bottom: 36px; }
+      .hdr-icon {
+        width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0;
+        background: linear-gradient(135deg, var(--gold), var(--gold-d));
+        display: flex; align-items: center; justify-content: center;
+        font-size: 24px; box-shadow: 0 0 24px var(--gold-glow);
       }
-      h1 { margin-top: 0; }
+      .hdr-title { font-size: 1.55rem; font-weight: 800; letter-spacing: -.5px; }
+      .hdr-title span { color: var(--gold); }
+      .hdr-sub { font-size: 0.8rem; color: var(--muted); }
+
+      /* ── Tabs ─────────────────────────────────────────────────── */
+      .tabs {
+        display: flex; gap: 4px;
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: var(--r); padding: 5px;
+        width: fit-content; margin-bottom: 26px;
+      }
+      .tab-btn {
+        padding: 9px 22px; border: none; border-radius: 10px;
+        background: transparent; color: var(--muted);
+        font-family: inherit; font-size: .9rem; font-weight: 600;
+        cursor: pointer; transition: all .2s;
+        display: flex; align-items: center; gap: 8px;
+      }
+      .tab-btn:hover { color: var(--text); background: rgba(255,255,255,.04); }
+      .tab-btn.active { background: linear-gradient(135deg, var(--gold), var(--gold-d)); color: #0a0c14; }
+      .tab-panel { display: none; }
+      .tab-panel.active { display: block; }
+
+      /* ── Card ─────────────────────────────────────────────────── */
+      .card {
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: var(--r); padding: 28px; box-shadow: var(--shadow);
+      }
+      .card + .card { margin-top: 20px; }
+      .card-title {
+        font-size: .73rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 1.2px; color: var(--gold); margin-bottom: 18px;
+      }
+
+      /* ── Tier cards ───────────────────────────────────────────── */
       .tier-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 16px;
-        margin: 20px 0;
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+        gap: 14px; margin-bottom: 28px;
       }
       .tier-card {
-        border: 1px solid #d1d5db;
-        border-radius: 10px;
-        padding: 18px;
-        background: #f9fafb;
+        background: var(--card2); border: 1px solid var(--border);
+        border-radius: var(--rs); padding: 18px 20px;
+        position: relative; overflow: hidden;
+        transition: border-color .2s, transform .2s;
       }
-      .controls {
-        display: grid;
-        gap: 16px;
-        margin: 20px 0;
+      .tier-card:hover { border-color: rgba(245,200,66,.25); transform: translateY(-2px); }
+      .tier-card::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+        background: linear-gradient(90deg, var(--gold), var(--gold-d)); opacity: .5;
       }
-      label {
-        display: block;
-        margin-bottom: 6px;
-        font-weight: 600;
+      .tier-card.soldout { opacity: .4; }
+      .tier-card.soldout::before { background: var(--muted); }
+      .tier-name { font-weight: 700; font-size: 1rem; margin-bottom: 5px; }
+      .tier-price { font-size: 1.5rem; font-weight: 800; color: var(--gold); letter-spacing: -.5px; }
+      .tier-price-sub { font-size: .73rem; color: var(--muted); margin-bottom: 10px; }
+      .avail-badge {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: .7rem; font-weight: 600; padding: 3px 10px;
+        border-radius: 20px; background: rgba(34,197,94,.12); color: var(--green);
       }
-      select, input, button {
+      .avail-badge.low  { background: rgba(245,158,11,.12); color: var(--amber); }
+      .avail-badge.sold { background: rgba(239,68,68,.12);  color: var(--red); }
+      .avail-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+      /* ── Form elements ────────────────────────────────────────── */
+      .form-label {
+        display: block; font-size: .73rem; font-weight: 600;
+        color: var(--dim); text-transform: uppercase;
+        letter-spacing: .8px; margin-bottom: 6px;
+      }
+      .form-input, .form-select {
         width: 100%;
-        padding: 10px 12px;
-        border-radius: 8px;
-        border: 1px solid #cbd5e1;
-        font-size: 1rem;
+        background: rgba(255,255,255,.04); border: 1px solid var(--border);
+        border-radius: var(--rs); color: var(--text);
+        font-family: inherit; font-size: .95rem; padding: 10px 14px;
+        outline: none; transition: border-color .2s, box-shadow .2s;
+        appearance: none;
       }
-      button {
-        background: #2563eb;
-        color: white;
-        border: none;
-        cursor: pointer;
-        font-weight: 700;
+      .form-select option { background: #111623; color: #e2e8f0; }
+      .form-select option:disabled { color: #64748b; font-style: italic; }
+      .form-select {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px;
       }
-      .checkbox-row {
+      .form-input:focus, .form-select:focus {
+        border-color: var(--gold-d); box-shadow: 0 0 0 3px var(--gold-glow);
+      }
+      .form-input::placeholder { color: var(--muted); }
+      .form-input.input-error { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(239,68,68,.2) !important; }
+
+      /* ── Ticket rows ──────────────────────────────────────────── */
+      .ticket-rows { display: flex; flex-direction: column; gap: 14px; }
+      .ticket-row {
+        display: grid; grid-template-columns: 1fr 140px 44px;
+        gap: 10px; align-items: start; animation: fadeIn .2s ease;
+      }
+      .row-err-text {
+        font-size: .75rem; color: var(--red); margin-top: 4px; font-weight: 500; display: none;
+      }
+      .row-err-text.visible { display: block; }
+      .remove-btn {
+        width: 36px; height: 36px; border: 1px solid rgba(239,68,68,.3);
+        border-radius: 8px; background: rgba(239,68,68,.07); color: var(--red);
+        font-size: 1.1rem; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; transition: all .15s;
+      }
+      .remove-btn:hover { background: rgba(239,68,68,.18); }
+      .add-row-btn {
+        margin-top: 10px; background: transparent;
+        border: 1px dashed rgba(245,200,66,.35); border-radius: var(--rs);
+        color: var(--gold); font-family: inherit; font-size: .88rem; font-weight: 600;
+        padding: 10px; width: 100%; cursor: pointer; transition: all .2s;
+      }
+      .add-row-btn:hover { background: var(--gold-glow); border-color: var(--gold); }
+
+      /* ── Coupon & Offers Section ─────────────────────────────── */
+      .coupon-section {
+        background: var(--card2);
+        border: 1px solid var(--border);
+        border-radius: var(--rs);
+        padding: 20px;
+        margin: 22px 0;
+      }
+      .coupon-hdr {
         display: flex;
         align-items: center;
-        gap: 12px;
-      }
-      .checkbox-row input { width: auto; }
-      .bill {
-        margin-top: 28px;
-        border-top: 2px solid #e5e7eb;
-        padding-top: 18px;
-      }
-      .bill-row {
-        display: flex;
         justify-content: space-between;
-        margin: 8px 0;
-      }
-      .totals {
+        font-size: .82rem;
         font-weight: 700;
-        border-top: 1px solid #cbd5e1;
-        margin-top: 16px;
-        padding-top: 12px;
+        text-transform: uppercase;
+        letter-spacing: .8px;
+        color: var(--gold);
+        margin-bottom: 14px;
       }
-      .error { color: #b91c1c; margin-top: 12px; }
+      .coupon-input-wrap {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      .coupon-input {
+        flex: 1;
+        background: rgba(255,255,255,.04);
+        border: 1px solid var(--border);
+        border-radius: var(--rs);
+        color: var(--text);
+        font-family: inherit;
+        font-size: .9rem;
+        padding: 9px 14px;
+        text-transform: uppercase;
+        outline: none;
+        transition: border-color .2s;
+      }
+      .coupon-input:focus { border-color: var(--gold-d); }
+      .coupon-input::placeholder { text-transform: none; color: var(--muted); }
+
+      .btn-coupon-apply {
+        padding: 9px 18px;
+        background: var(--gold);
+        color: #0a0c14;
+        border: none;
+        border-radius: var(--rs);
+        font-family: inherit;
+        font-size: .85rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: opacity .2s;
+      }
+      .btn-coupon-apply:hover { opacity: .9; }
+
+      .coupon-msg {
+        font-size: .78rem;
+        margin-top: -10px;
+        margin-bottom: 12px;
+        display: none;
+      }
+      .coupon-msg.success { display: block; color: var(--green); }
+      .coupon-msg.error   { display: block; color: var(--red); }
+
+      .offers-hdr {
+        font-size: .7rem;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: .8px;
+        margin-bottom: 10px;
+      }
+      .offers-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .offer-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: rgba(255,255,255,.025);
+        border: 1px dashed rgba(255,255,255,.12);
+        border-radius: var(--rs);
+        padding: 12px 16px;
+        transition: all .2s;
+      }
+      .offer-card:hover {
+        border-color: rgba(245,200,66,.3);
+        background: rgba(255,255,255,.04);
+      }
+      .offer-card.applied {
+        border-style: solid;
+        border-color: var(--green);
+        background: rgba(34,197,94,.06);
+      }
+      .offer-card-left {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .offer-code-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: .68rem;
+        font-weight: 800;
+        letter-spacing: .6px;
+        background: rgba(245,200,66,.15);
+        color: var(--gold);
+        padding: 2px 7px;
+        border-radius: 4px;
+        width: fit-content;
+      }
+      .offer-card.applied .offer-code-tag {
+        background: rgba(34,197,94,.2);
+        color: var(--green);
+      }
+      .offer-title { font-weight: 700; font-size: .88rem; color: var(--text); }
+      .offer-desc  { font-size: .76rem; color: var(--muted); }
+
+      .btn-offer-action {
+        padding: 7px 16px;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: .8rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all .2s;
+        white-space: nowrap;
+        border: none;
+      }
+      .btn-offer-action.apply {
+        background: rgba(245,200,66,.12);
+        border: 1px solid rgba(245,200,66,.3);
+        color: var(--gold);
+      }
+      .btn-offer-action.apply:hover {
+        background: var(--gold);
+        color: #0a0c14;
+      }
+      .btn-offer-action.remove {
+        background: rgba(239,68,68,.1);
+        border: 1px solid rgba(239,68,68,.3);
+        color: var(--red);
+      }
+      .btn-offer-action.remove:hover {
+        background: rgba(239,68,68,.25);
+      }
+
+      .applied-summary {
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .applied-label { font-size: .75rem; color: var(--dim); font-weight: 600; }
+      .applied-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: .75rem;
+        font-weight: 700;
+        background: rgba(34,197,94,.12);
+        border: 1px solid rgba(34,197,94,.3);
+        color: var(--green);
+        padding: 3px 10px;
+        border-radius: 20px;
+      }
+      .applied-chip-remove {
+        cursor: pointer;
+        font-weight: 800;
+        font-size: .85rem;
+        margin-left: 2px;
+        opacity: .8;
+      }
+      .applied-chip-remove:hover { opacity: 1; }
+
+      /* ── Buttons ──────────────────────────────────────────────── */
+      .btn-gold {
+        width: 100%; padding: 14px; border: none; border-radius: var(--rs);
+        background: linear-gradient(135deg, var(--gold), var(--gold-d));
+        color: #0a0c14; font-family: inherit; font-size: 1rem; font-weight: 800;
+        cursor: pointer; letter-spacing: .3px;
+        transition: opacity .2s, transform .15s, box-shadow .2s;
+        box-shadow: 0 4px 20px rgba(245,200,66,.3);
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+      }
+      .btn-gold:hover  { opacity: .9; transform: translateY(-1px); box-shadow: 0 6px 28px rgba(245,200,66,.45); }
+      .btn-gold:active { transform: none; }
+      .btn-gold:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+      .btn-blue {
+        width: 100%; padding: 13px; border: 1px solid rgba(59,130,246,.4);
+        border-radius: var(--rs); background: transparent;
+        color: var(--blue); font-family: inherit; font-size: .95rem; font-weight: 700;
+        cursor: pointer; transition: all .2s;
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+      }
+      .btn-blue:hover { background: rgba(59,130,246,.1); border-color: var(--blue); }
+      .btn-blue:disabled { opacity: .5; cursor: not-allowed; }
+
+      .btn-green {
+        width: 100%; padding: 14px; border: none; border-radius: var(--rs);
+        background: linear-gradient(135deg, #16a34a, #15803d);
+        color: #fff; font-family: inherit; font-size: 1rem; font-weight: 800;
+        cursor: pointer; letter-spacing: .3px;
+        transition: opacity .2s, transform .15s, box-shadow .2s;
+        box-shadow: 0 4px 20px rgba(34,197,94,.25);
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+      }
+      .btn-green:hover  { opacity: .9; transform: translateY(-1px); }
+      .btn-green:active { transform: none; }
+      .btn-green:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+      /* ── Spinner ──────────────────────────────────────────────── */
+      .spinner {
+        width: 18px; height: 18px; border-radius: 50%;
+        border: 2px solid rgba(255,255,255,.25); border-top-color: #fff;
+        animation: spin .6s linear infinite; display: none;
+      }
+      .btn-gold .spinner { border-color: rgba(10,12,20,.25); border-top-color: rgba(10,12,20,.85); }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+      /* ── Bill ─────────────────────────────────────────────────── */
+      .bill-section { margin-top: 24px; display: none; animation: fadeIn .3s ease; }
+      .bill-section.visible { display: block; }
+      .bill-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+      .bill-hdr-title { font-size: 1rem; font-weight: 700; }
+      .bill-badge {
+        font-size: .68rem; font-weight: 700; padding: 3px 10px;
+        border-radius: 20px; background: rgba(34,197,94,.12); color: var(--green); letter-spacing: .5px;
+      }
+      .bill-items { display: flex; flex-direction: column; }
+      .bill-line {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 11px 0; border-bottom: 1px solid var(--border);
+        font-size: .9rem; color: var(--dim);
+      }
+      .bill-line:last-child { border-bottom: none; }
+      .bill-line.tier  { color: var(--text); font-weight: 500; }
+      .bill-line.disc  { color: var(--green); }
+      .bill-line.total {
+        margin-top: 10px; padding: 14px 18px;
+        background: linear-gradient(135deg, rgba(245,200,66,.1), rgba(245,200,66,.04));
+        border: 1px solid rgba(245,200,66,.2) !important;
+        border-radius: var(--rs); color: var(--gold); font-size: 1.1rem; font-weight: 800;
+      }
+      .bill-line .lbl-wrap { display: flex; flex-direction: column; }
+      .bill-line .sub-text { font-size: .71rem; color: var(--muted); margin-top: 1px; }
+
+      /* ── Error / Info boxes ───────────────────────────────────── */
+      .error-box {
+        display: none; background: rgba(239,68,68,.08);
+        border: 1px solid rgba(239,68,68,.3); border-radius: var(--rs);
+        padding: 12px 16px; color: #fca5a5; font-size: .88rem;
+        margin-top: 14px; animation: fadeIn .2s;
+      }
+      .error-box.visible { display: block; }
+      .info-box {
+        display: none; background: rgba(34,197,94,.08);
+        border: 1px solid rgba(34,197,94,.25); border-radius: var(--rs);
+        padding: 12px 16px; color: #86efac; font-size: .88rem;
+        margin-top: 14px; animation: fadeIn .2s;
+      }
+      .info-box.visible { display: block; }
+
+      /* ── Importer — data entry ────────────────────────────────── */
+      .imp-grid-hdr, .imp-row-entry {
+        display: grid; grid-template-columns: 1fr 1fr 44px; gap: 8px; align-items: center;
+      }
+      .imp-rows-wrap { display: flex; flex-direction: column; gap: 8px; }
+      .imp-row-entry { animation: fadeIn .2s ease; }
+      .add-imp-btn {
+        margin-top: 4px; background: transparent;
+        border: 1px dashed rgba(59,130,246,.35); border-radius: var(--rs);
+        color: var(--blue); font-family: inherit; font-size: .85rem; font-weight: 600;
+        padding: 9px; width: 100%; cursor: pointer; transition: all .2s;
+      }
+      .add-imp-btn:hover { background: rgba(59,130,246,.08); border-color: var(--blue); }
+
+      /* ── Import report ────────────────────────────────────────── */
+      .imp-report { display: none; animation: fadeIn .3s ease; }
+      .imp-report.visible { display: block; }
+
+      .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+      @media (max-width: 560px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
+      .stat-chip {
+        background: var(--card2); border: 1px solid var(--border);
+        border-radius: var(--rs); padding: 14px; text-align: center;
+      }
+      .stat-chip .n  { font-size: 1.6rem; font-weight: 800; }
+      .stat-chip .l  { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; margin-top: 3px; }
+      .stat-chip.ok  .n { color: var(--green); }
+      .stat-chip.dup .n { color: var(--amber); }
+      .stat-chip.bad .n { color: var(--red); }
+      .stat-chip.tot .n { color: var(--blue); }
+
+      .report-sec {
+        font-size: .7rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 1px; color: var(--muted); margin: 16px 0 8px;
+      }
+      .rtbl { width: 100%; border-collapse: collapse; font-size: .82rem; }
+      .rtbl th {
+        text-align: left; padding: 7px 10px; font-size: .68rem; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
+        border-bottom: 1px solid var(--border);
+      }
+      .rtbl td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.03); vertical-align: top; }
+      .rtbl tr:last-child td { border-bottom: none; }
+      .badge {
+        display: inline-block; padding: 2px 8px; border-radius: 20px;
+        font-size: .67rem; font-weight: 700; letter-spacing: .3px;
+      }
+      .badge.ok  { background: rgba(34,197,94,.12);  color: var(--green); }
+      .badge.dup { background: rgba(245,158,11,.12); color: var(--amber); }
+      .badge.bad { background: rgba(239,68,68,.12);  color: var(--red); }
+      .reason    { color: var(--muted); font-size: .74rem; font-style: italic; }
+
+      /* ── Apply CTA banner ─────────────────────────────────────── */
+      .apply-banner {
+        display: none; margin-top: 20px;
+        background: linear-gradient(135deg, rgba(22,163,74,.12), rgba(21,128,61,.06));
+        border: 1px solid rgba(34,197,94,.3); border-radius: var(--r); padding: 20px 24px;
+        animation: fadeIn .3s ease;
+      }
+      .apply-banner.visible { display: block; }
+      .apply-banner-title { font-size: 1rem; font-weight: 700; margin-bottom: 4px; }
+      .apply-banner-sub { font-size: .83rem; color: var(--dim); margin-bottom: 16px; }
+      .apply-avail-row {
+        display: flex; align-items: center; gap: 12px;
+        margin-bottom: 16px; flex-wrap: wrap;
+      }
+      .apply-avail-row label { font-size: .82rem; color: var(--dim); white-space: nowrap; }
+      .apply-avail-row input {
+        width: 90px; background: rgba(255,255,255,.06); border: 1px solid var(--border);
+        border-radius: 6px; color: var(--text); font-family: inherit;
+        font-size: .9rem; padding: 7px 10px; outline: none;
+        transition: border-color .2s;
+      }
+      .apply-avail-row input:focus { border-color: var(--green); }
+
+      /* ── Active config badge in booking tab ───────────────────── */
+      .config-source {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: .7rem; font-weight: 600; padding: 4px 12px;
+        border-radius: 20px; background: rgba(59,130,246,.1);
+        color: var(--blue); letter-spacing: .4px; margin-bottom: 16px;
+      }
+      .config-source.imported { background: rgba(34,197,94,.1); color: var(--green); }
+      .config-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+      /* ── Responsive ───────────────────────────────────────────── */
+      @media (max-width: 600px) {
+        .ticket-row { grid-template-columns: 1fr 100px 36px; }
+        .page { padding: 18px 12px 48px; }
+        .card { padding: 18px 16px; }
+        .offer-card { flex-direction: column; align-items: flex-start; gap: 10px; }
+        .btn-offer-action { width: 100%; text-align: center; }
+      }
     </style>
   </head>
   <body>
-    <div class="container">
-      <h1>Multiplex Booking Counter</h1>
+    <div class="page">
 
-      <div class="tier-grid">
-        {% for tier in tiers %}
-        <div class="tier-card">
-          <strong>{{ tier.name }}</strong><br />
-          ₹{{ tier.price }}<br />
-          Availability: {{ tier.availability }}
+      <!-- Header -->
+      <header class="hdr">
+        <div class="hdr-icon">🎬</div>
+        <div>
+          <div class="hdr-title">Cine<span>Price</span></div>
+          <div class="hdr-sub">Multiplex Pricing Engine — exact to the paisa</div>
         </div>
-        {% endfor %}
+      </header>
+
+      <!-- Tabs -->
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" id="tab-book" role="tab" aria-selected="true"
+                onclick="switchTab('book')">
+          <span>🎟️</span> Book Tickets
+        </button>
+        <button class="tab-btn" id="tab-import" role="tab" aria-selected="false"
+                onclick="switchTab('import')">
+          <span>📋</span> Import Price List
+        </button>
       </div>
 
-      <form id="booking-form">
-        <div class="controls">
-          <div>
-            <label for="tier">Ticket tier</label>
-            <select id="tier">
-              {% for tier in tiers %}
-              <option value="{{ tier.name }}">{{ tier.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
+      <!-- ═══ BOOKING TAB ════════════════════════════════════════ -->
+      <div class="tab-panel active" id="panel-book">
 
-          <div>
-            <label for="quantity">Quantity</label>
-            <input id="quantity" type="number" min="1" value="1" />
-          </div>
-
-          <div class="checkbox-row">
-            <input id="festival" type="checkbox" />
-            <label for="festival">Apply festival discount</label>
-          </div>
-
-          <div class="checkbox-row">
-            <input id="member" type="checkbox" />
-            <label for="member">Member discount</label>
-          </div>
-
-          <button type="submit">Generate bill</button>
+        <!-- Active config indicator -->
+        <div class="config-source" id="config-source-badge">
+          <span class="config-dot"></span>
+          <span id="config-source-text">Using default price list</span>
         </div>
-      </form>
 
-      <div id="error" class="error"></div>
+        <!-- Tier display -->
+        <div class="card">
+          <div class="card-title">Seat Classes &amp; Prices</div>
+          <div class="tier-grid" id="tier-grid">
+            {% for tier in tiers %}
+            <div class="tier-card {% if tier.availability == 0 %}soldout{% endif %}">
+              <div class="tier-name">{{ tier.name }}</div>
+              <div class="tier-price">₹{{ tier.price }}</div>
+              <div class="tier-price-sub">per ticket</div>
+              {% if tier.availability == 0 %}
+                <span class="avail-badge sold"><span class="avail-dot"></span>Sold Out</span>
+              {% elif tier.availability <= 3 %}
+                <span class="avail-badge low"><span class="avail-dot"></span>{{ tier.availability }} left</span>
+              {% else %}
+                <span class="avail-badge"><span class="avail-dot"></span>{{ tier.availability }} available</span>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
 
-      <div class="bill" id="bill">
-        <div class="bill-row"><span>Base subtotal</span><span>₹0.00</span></div>
+        <!-- Booking form -->
+        <div class="card">
+          <div class="card-title">Build Your Booking</div>
+          <form id="booking-form" novalidate>
+            <div id="ticket-rows" class="ticket-rows"></div>
+            <button type="button" class="add-row-btn" onclick="addTicketRow()">
+              + Add another seat class
+            </button>
+
+            <!-- Professional Apply Coupon & Offers Feature -->
+            <div class="coupon-section">
+              <div class="coupon-hdr">
+                <span>🏷️ Apply Coupon / Offers</span>
+              </div>
+              
+              <div class="coupon-input-wrap">
+                <input type="text" id="coupon-code-input" class="coupon-input" placeholder="Enter coupon code (e.g. FESTIVAL100, MEMBER10)" />
+                <button type="button" class="btn-coupon-apply" onclick="applyEnteredCoupon()">Apply</button>
+              </div>
+              <div class="coupon-msg" id="coupon-msg"></div>
+
+              <div class="offers-hdr">AVAILABLE OFFERS</div>
+              <div class="offers-list">
+                <!-- Offer Card 1: Festival -->
+                <div class="offer-card" id="offer-card-fest">
+                  <div class="offer-card-left">
+                    <div class="offer-code-tag">FESTIVAL100</div>
+                    <div class="offer-title">🎉 Festival Discount</div>
+                    <div class="offer-desc">Flat ₹<span id="lbl-festival-amt">{{ config.festival_discount }}</span> off on festival booking</div>
+                  </div>
+                  <button type="button" class="btn-offer-action apply" id="btn-offer-fest" onclick="toggleCoupon('fest')">
+                    Apply Offer
+                  </button>
+                </div>
+
+                <!-- Offer Card 2: Member -->
+                <div class="offer-card" id="offer-card-member">
+                  <div class="offer-card-left">
+                    <div class="offer-code-tag">MEMBER10</div>
+                    <div class="offer-title">⭐ Member Discount</div>
+                    <div class="offer-desc">{{ (config.member_discount_rate * 100)|int }}% off for registered members (capped at ₹{{ config.member_discount_cap }})</div>
+                  </div>
+                  <button type="button" class="btn-offer-action apply" id="btn-offer-member" onclick="toggleCoupon('member')">
+                    Apply Offer
+                  </button>
+                </div>
+              </div>
+
+              <div class="applied-summary" id="applied-summary" style="display: none;">
+                <span class="applied-label">Active Coupons:</span>
+                <div id="applied-chips-wrap" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+              </div>
+            </div>
+
+            <button type="submit" class="btn-gold" id="quote-btn">
+              <span id="quote-txt">Generate Bill</span>
+              <span class="spinner" id="quote-spin"></span>
+            </button>
+          </form>
+
+          <div class="error-box" id="book-err"></div>
+
+          <div class="bill-section" id="bill-section">
+            <div class="bill-hdr">
+              <div class="bill-hdr-title">📄 Itemised Bill</div>
+              <div class="bill-badge">CONFIRMED</div>
+            </div>
+            <div class="bill-items" id="bill-items"></div>
+          </div>
+        </div>
       </div>
-    </div>
+
+      <!-- ═══ IMPORT TAB ═════════════════════════════════════════ -->
+      <div class="tab-panel" id="panel-import">
+        <div class="card">
+          <div class="card-title">Import &amp; Clean a Seat-Class Price List</div>
+          <p style="font-size:.84rem;color:var(--muted);margin-bottom:6px;">
+            Paste your raw price data below — mixed casing, duplicate names, prices in any format
+            (₹200, Rs. 300, 450.00), blank values, negative prices. The engine normalises everything,
+            de-duplicates, and rejects what it can't use.
+          </p>
+          <p style="font-size:.84rem;color:var(--dim);margin-bottom:20px;">
+            After reviewing the report, click <strong style="color:var(--green)">Apply to Booking Engine</strong>
+            — the cleaned tiers become the <em>live pricing configuration</em> and the Booking tab
+            updates immediately.
+          </p>
+
+          <!-- Column headers -->
+          <div class="imp-grid-hdr" style="margin-bottom:6px;">
+            <div class="form-label" style="margin:0;">Seat Class</div>
+            <div class="form-label" style="margin:0;">Price</div>
+            <div></div>
+          </div>
+          <div id="imp-rows-wrap" class="imp-rows-wrap"></div>
+          <button type="button" class="add-imp-btn" onclick="addImportRow()">+ Add row</button>
+
+          <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
+            <button type="button" class="btn-blue" id="import-btn" style="flex:1;min-width:160px;" onclick="runImport()">
+              <span id="import-txt">🧹 Clean &amp; Preview</span>
+              <span class="spinner" id="import-spin"></span>
+            </button>
+            <button type="button" class="btn-blue" id="load-demo-btn" style="flex:0 0 auto;width:auto;padding:13px 18px;"
+                    onclick="loadDemoData()" title="Load demo messy data">
+              ↺ Load demo data
+            </button>
+          </div>
+
+          <div class="error-box" id="imp-err"></div>
+
+          <!-- Report -->
+          <div class="imp-report" id="imp-report">
+            <div style="margin-top:26px;display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+              <div style="font-weight:700;font-size:1rem;">Import Report</div>
+            </div>
+            <div class="stat-row" id="stat-row"></div>
+            <div id="report-body"></div>
+          </div>
+
+          <!-- Apply banner — shown only when there are clean rows -->
+          <div class="apply-banner" id="apply-banner">
+            <div class="apply-banner-title">✅ Ready to apply to Booking Engine</div>
+            <div class="apply-banner-sub" id="apply-banner-sub"></div>
+            <div class="apply-avail-row">
+              <label for="avail-input">Default availability per tier:</label>
+              <input type="number" id="avail-input" min="1" max="999" value="10" />
+            </div>
+            <button type="button" class="btn-green" id="apply-btn" onclick="applyPriceList()">
+              <span id="apply-txt">🚀 Apply to Booking Engine</span>
+              <span class="spinner" id="apply-spin"></span>
+            </button>
+          </div>
+
+          <div class="info-box" id="apply-info"></div>
+        </div>
+      </div>
+
+    </div><!-- /page -->
 
     <script>
-      const form = document.getElementById('booking-form');
-      const bill = document.getElementById('bill');
-      const errorBox = document.getElementById('error');
+      /* ── Globals ──────────────────────────────────────────────── */
+      let TIERS = {{ tiers | tojson }};
+      let _pendingCleanRows = [];   // clean_rows from last import, used by applyPriceList()
+      
+      // Coupon state
+      const appliedCoupons = {
+        fest: false,
+        member: false
+      };
 
-      form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        errorBox.textContent = '';
-        bill.innerHTML = '';
+      /* ── Tab switching ────────────────────────────────────────── */
+      function switchTab(name) {
+        ['book','import'].forEach(t => {
+          document.getElementById('tab-'  + t).classList.toggle('active', t === name);
+          document.getElementById('panel-'+ t).classList.toggle('active', t === name);
+          document.getElementById('tab-'  + t).setAttribute('aria-selected', t === name);
+        });
+      }
 
-        const payload = {
-          tier: document.getElementById('tier').value,
-          quantity: Number(document.getElementById('quantity').value),
-          member: document.getElementById('member').checked,
-          festival_offer: document.getElementById('festival').checked,
-        };
+      /* ── Ticket rows & Availability enforcement ───────────────── */
+      let rowCount = 0;
 
-        const response = await fetch('/api/quote', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+      function tierOptions(sel) {
+        return TIERS.map(t => {
+          const avail = t.availability;
+          const sold = avail === 0;
+          const availText = sold ? '(Sold Out)' : `(${avail} available)`;
+          return `<option value="${escAttr(t.name)}"${t.name===sel?' selected':''}${sold?' disabled':''}>${esc(t.name)} — ₹${t.price} ${availText}</option>`;
+        }).join('');
+      }
+
+      function getFirstAvailableTier() {
+        const firstAvail = TIERS.find(t => t.availability > 0);
+        return firstAvail ? firstAvail.name : (TIERS[0]?.name || '');
+      }
+
+      function addTicketRow(selTier) {
+        const wrap = document.getElementById('ticket-rows');
+        const id   = ++rowCount;
+        const def  = selTier || getFirstAvailableTier();
+        const first = id === 1;
+        const row = document.createElement('div');
+        row.className = 'ticket-row'; row.id = 'trow-'+id;
+        row.innerHTML = `
+          <div>
+            ${first ? '<span class="form-label">Seat Class</span>' : ''}
+            <select class="form-select t-tier" id="tsel-${id}" onchange="onRowTierChange(${id})">${tierOptions(def)}</select>
+          </div>
+          <div>
+            ${first ? '<span class="form-label">Qty</span>' : ''}
+            <input class="form-input t-qty" id="tqty-${id}" type="number" min="1" value="1" oninput="onRowQtyChange(${id})"/>
+            <div class="row-err-text" id="rerr-${id}"></div>
+          </div>
+          <button type="button" class="remove-btn" onclick="removeTicketRow(${id})"
+            title="Remove" style="margin-top:${first?'22':'0'}px;">×</button>`;
+        wrap.appendChild(row);
+        syncRemoveBtns();
+        updateRowLimits(id);
+        validateAllAvailability();
+      }
+
+      function removeTicketRow(id) {
+        const el = document.getElementById('trow-'+id);
+        if (el) el.remove();
+        syncRemoveBtns();
+        validateAllAvailability();
+      }
+
+      function syncRemoveBtns() {
+        const rows = document.querySelectorAll('.ticket-row');
+        rows.forEach(r => {
+          const b = r.querySelector('.remove-btn');
+          if (b) b.style.display = rows.length === 1 ? 'none' : 'flex';
+        });
+      }
+
+      function updateRowLimits(rowId) {
+        const sel = document.getElementById(`tsel-${rowId}`);
+        const qtyInput = document.getElementById(`tqty-${rowId}`);
+        if (!sel || !qtyInput) return;
+
+        const tierName = sel.value;
+        const tierObj = TIERS.find(t => t.name === tierName);
+        if (tierObj) {
+          qtyInput.max = Math.max(1, tierObj.availability);
+        }
+      }
+
+      function onRowTierChange(rowId) {
+        updateRowLimits(rowId);
+        validateAllAvailability();
+      }
+
+      function onRowQtyChange(rowId) {
+        validateAllAvailability();
+      }
+
+      function validateAllAvailability() {
+        const errEl = document.getElementById('book-err');
+        let isValid = true;
+        let overallErrorMsg = '';
+
+        // Aggregate quantities requested per tier
+        const aggregated = {};
+        document.querySelectorAll('.ticket-row').forEach(row => {
+          const sel = row.querySelector('.t-tier');
+          const qtyIn = row.querySelector('.t-qty');
+          const rerr = row.querySelector('.row-err-text');
+          if (!sel || !qtyIn) return;
+
+          const tierName = sel.value;
+          const qty = parseInt(qtyIn.value, 10) || 0;
+          const tierObj = TIERS.find(t => t.name === tierName);
+
+          if (!aggregated[tierName]) aggregated[tierName] = { totalQty: 0, tierObj, rows: [] };
+          aggregated[tierName].totalQty += qty;
+          aggregated[tierName].rows.push({ row, qtyIn, rerr, qty });
         });
 
-        const data = await response.json();
-        if (!response.ok || !data.success) {
-          errorBox.textContent = data.message || 'Unable to generate a bill.';
+        // Reset individual row errors
+        document.querySelectorAll('.row-err-text').forEach(e => {
+          e.classList.remove('visible');
+          e.textContent = '';
+        });
+        document.querySelectorAll('.t-qty').forEach(i => i.classList.remove('input-error'));
+
+        // Check availability per aggregated tier
+        for (const tierName in aggregated) {
+          const data = aggregated[tierName];
+          const avail = data.tierObj ? data.tierObj.availability : 0;
+
+          if (data.totalQty > avail) {
+            isValid = false;
+            const msg = avail === 0
+              ? `'${tierName}' is sold out!`
+              : `Requested ${data.totalQty} '${tierName}' seats, but only ${avail} available!`;
+
+            if (!overallErrorMsg) overallErrorMsg = msg;
+
+            data.rows.forEach(item => {
+              item.qtyIn.classList.add('input-error');
+              item.rerr.textContent = avail === 0 ? `Sold Out` : `Max available: ${avail}`;
+              item.rerr.classList.add('visible');
+            });
+          }
+        }
+
+        if (!isValid) {
+          showErr(errEl, overallErrorMsg);
+        } else {
+          errEl.classList.remove('visible');
+        }
+
+        return isValid;
+      }
+
+      function getTickets() {
+        return Array.from(document.querySelectorAll('.ticket-row')).map(r => ({
+          tier:     r.querySelector('.t-tier').value,
+          quantity: parseInt(r.querySelector('.t-qty').value, 10) || 1,
+        }));
+      }
+
+      /* Rebuild the tier dropdowns after applying a new price list */
+      function rebuildDropdowns() {
+        document.querySelectorAll('.ticket-row').forEach(row => {
+          const sel = row.querySelector('.t-tier');
+          if (sel) {
+            const cur = sel.value;
+            const validCur = TIERS.find(t => t.name === cur && t.availability > 0) ? cur : getFirstAvailableTier();
+            sel.innerHTML = tierOptions(validCur);
+          }
+        });
+        document.querySelectorAll('.ticket-row').forEach(row => {
+          const rowId = row.id.replace('trow-', '');
+          updateRowLimits(rowId);
+        });
+        validateAllAvailability();
+      }
+
+      /* Rebuild the tier grid cards in the booking tab */
+      function rebuildTierGrid() {
+        const grid = document.getElementById('tier-grid');
+        grid.innerHTML = TIERS.map(t => {
+          const avail = t.availability;
+          let badge = avail === 0
+            ? `<span class="avail-badge sold"><span class="avail-dot"></span>Sold Out</span>`
+            : avail <= 3
+              ? `<span class="avail-badge low"><span class="avail-dot"></span>${avail} left</span>`
+              : `<span class="avail-badge"><span class="avail-dot"></span>${avail} available</span>`;
+          return `
+            <div class="tier-card${avail===0?' soldout':''}">
+              <div class="tier-name">${esc(t.name)}</div>
+              <div class="tier-price">₹${esc(t.price)}</div>
+              <div class="tier-price-sub">per ticket</div>
+              ${badge}
+            </div>`;
+        }).join('');
+      }
+
+      /* ── Coupon Feature Logic ──────────────────────────────────── */
+      function toggleCoupon(type) {
+        if (type === 'fest') {
+          appliedCoupons.fest = !appliedCoupons.fest;
+        } else if (type === 'member') {
+          appliedCoupons.member = !appliedCoupons.member;
+        }
+        updateCouponUI();
+      }
+
+      function applyEnteredCoupon() {
+        const input = document.getElementById('coupon-code-input');
+        const code = (input.value || '').trim().toUpperCase();
+        const msgEl = document.getElementById('coupon-msg');
+        msgEl.className = 'coupon-msg';
+        msgEl.textContent = '';
+
+        if (!code) {
+          msgEl.textContent = 'Please enter a coupon code.';
+          msgEl.classList.add('error');
           return;
         }
 
-        const billData = data.bill;
-        const lines = [
-          { label: 'Base subtotal', value: formatMoney(billData.base_subtotal) },
-          { label: 'Festival discount', value: '-' + formatMoney(billData.festival_discount) },
-          { label: 'Member discount', value: '-' + formatMoney(billData.member_discount) },
-          { label: 'Subtotal after discounts', value: formatMoney(billData.subtotal_after_discounts) },
-          { label: 'Convenience fee', value: formatMoney(billData.convenience_fee) },
-          { label: 'GST', value: formatMoney(billData.gst) },
-          { label: 'Final total', value: formatMoney(billData.final_total), className: 'totals' },
-        ];
+        if (code === 'FESTIVAL100' || code === 'FESTIVAL') {
+          if (appliedCoupons.fest) {
+            msgEl.textContent = 'Coupon FESTIVAL100 is already applied!';
+            msgEl.classList.add('success');
+          } else {
+            appliedCoupons.fest = true;
+            msgEl.textContent = 'Coupon FESTIVAL100 applied successfully! 🎉';
+            msgEl.classList.add('success');
+          }
+          input.value = '';
+        } else if (code === 'MEMBER10' || code === 'MEMBER') {
+          if (appliedCoupons.member) {
+            msgEl.textContent = 'Coupon MEMBER10 is already applied!';
+            msgEl.classList.add('success');
+          } else {
+            appliedCoupons.member = true;
+            msgEl.textContent = 'Coupon MEMBER10 applied successfully! ⭐';
+            msgEl.classList.add('success');
+          }
+          input.value = '';
+        } else {
+          msgEl.textContent = `Invalid coupon code '${code}'. Try FESTIVAL100 or MEMBER10.`;
+          msgEl.classList.add('error');
+        }
 
-        lines.forEach((line) => {
-          const row = document.createElement('div');
-          row.className = 'bill-row' + (line.className ? ' ' + line.className : '');
-          row.innerHTML = '<span>' + line.label + '</span><span>' + line.value + '</span>';
-          bill.appendChild(row);
-        });
+        updateCouponUI();
+      }
+
+      function updateCouponUI() {
+        // Fest offer card
+        const cardFest = document.getElementById('offer-card-fest');
+        const btnFest = document.getElementById('btn-offer-fest');
+        if (appliedCoupons.fest) {
+          cardFest.classList.add('applied');
+          btnFest.className = 'btn-offer-action remove';
+          btnFest.textContent = 'Remove Offer';
+        } else {
+          cardFest.classList.remove('applied');
+          btnFest.className = 'btn-offer-action apply';
+          btnFest.textContent = 'Apply Offer';
+        }
+
+        // Member offer card
+        const cardMember = document.getElementById('offer-card-member');
+        const btnMember = document.getElementById('btn-offer-member');
+        if (appliedCoupons.member) {
+          cardMember.classList.add('applied');
+          btnMember.className = 'btn-offer-action remove';
+          btnMember.textContent = 'Remove Offer';
+        } else {
+          cardMember.classList.remove('applied');
+          btnMember.className = 'btn-offer-action apply';
+          btnMember.textContent = 'Apply Offer';
+        }
+
+        // Chips summary
+        const summary = document.getElementById('applied-summary');
+        const chipsWrap = document.getElementById('applied-chips-wrap');
+        chipsWrap.innerHTML = '';
+
+        let count = 0;
+        if (appliedCoupons.fest) {
+          count++;
+          chipsWrap.innerHTML += `
+            <span class="applied-chip">
+              🎉 FESTIVAL100 (₹100 Off)
+              <span class="applied-chip-remove" onclick="toggleCoupon('fest')" title="Remove">×</span>
+            </span>`;
+        }
+        if (appliedCoupons.member) {
+          count++;
+          chipsWrap.innerHTML += `
+            <span class="applied-chip">
+              ⭐ MEMBER10 (10% Off)
+              <span class="applied-chip-remove" onclick="toggleCoupon('member')" title="Remove">×</span>
+            </span>`;
+        }
+
+        summary.style.display = count > 0 ? 'flex' : 'none';
+      }
+
+      /* ── Booking Form Submission ──────────────────────────────── */
+      document.getElementById('booking-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const errEl   = document.getElementById('book-err');
+        const billSec = document.getElementById('bill-section');
+        errEl.classList.remove('visible');
+        billSec.classList.remove('visible');
+
+        // Client-side availability validation pre-submit check
+        if (!validateAllAvailability()) {
+          return;
+        }
+
+        setBusy('quote-btn','quote-txt','quote-spin', true);
+        try {
+          const res  = await apiFetch('/api/quote', {
+            tickets: getTickets(),
+            member:        appliedCoupons.member,
+            festival_offer:appliedCoupons.fest,
+          });
+          if (!res.success) { showErr(errEl, res.message); return; }
+          renderBill(res.bill);
+        } catch(e) { showErr(errEl,'Network error. Please try again.'); }
+        finally { setBusy('quote-btn','quote-txt','quote-spin', false); }
       });
 
-      function formatMoney(value) {
-        const numeric = Number(value || 0);
-        return '₹' + numeric.toFixed(2);
+      function renderBill(bill) {
+        const items = document.getElementById('bill-items');
+        items.innerHTML = '';
+
+        (bill.line_items||[]).forEach(li => {
+          billLine(items, li.label, `${li.quantity} × ₹${fmt(li.unit_price)}`,
+                   `₹${fmt(li.amount)}`, 'tier');
+        });
+
+        const fd = parseFloat(bill.festival_discount||0);
+        const md = parseFloat(bill.member_discount||0);
+        if (fd > 0) billLine(items,'Festival Discount','Flat deduction', `− ₹${fmt(bill.festival_discount)}`, 'disc');
+        if (md > 0) {
+          const mrate = bill.member_discount_rate ? (parseFloat(bill.member_discount_rate)*100).toFixed(0) : 10;
+          const mcap  = bill.member_discount_cap  ? `₹${fmt(bill.member_discount_cap)}` : '';
+          billLine(items,'Member Discount',`${mrate}% off${mcap?' (cap '+mcap+')':''}`,`− ₹${fmt(bill.member_discount)}`,'disc');
+        }
+        billLine(items,'Subtotal after Discounts','', `₹${fmt(bill.subtotal_after_discounts)}`,'');
+
+        const feePerTkt = parseFloat(bill.convenience_fee)/bill.total_tickets;
+        billLine(items,'Convenience Fee', `${bill.total_tickets} ticket(s) × ₹${fmt(feePerTkt)}`,
+                 `₹${fmt(bill.convenience_fee)}`,'');
+
+        const gstPct = bill.gst_rate ? (parseFloat(bill.gst_rate)*100).toFixed(0) : 18;
+        billLine(items,`GST (${gstPct}%)`,'On post-discount amount + conv. fee', `₹${fmt(bill.gst)}`,'');
+
+        const tot = document.createElement('div');
+        tot.className = 'bill-line total';
+        tot.innerHTML = `<span>Total Payable</span><span>₹${fmt(bill.final_total)}</span>`;
+        items.appendChild(tot);
+
+        const sec = document.getElementById('bill-section');
+        sec.classList.add('visible');
+        sec.scrollIntoView({behavior:'smooth',block:'nearest'});
       }
+
+      function billLine(container, label, sub, value, cls) {
+        const d = document.createElement('div');
+        d.className = 'bill-line' + (cls ? ' '+cls : '');
+        d.innerHTML = `
+          <span class="lbl-wrap">
+            ${label}
+            ${sub ? `<span class="sub-text">${sub}</span>` : ''}
+          </span>
+          <span>${value}</span>`;
+        container.appendChild(d);
+      }
+
+      /* ── Importer ─────────────────────────────────────────────── */
+      let impRowCount = 0;
+
+      function addImportRow(cls, price) {
+        const wrap = document.getElementById('imp-rows-wrap');
+        const id   = ++impRowCount;
+        const row  = document.createElement('div');
+        row.className = 'imp-row-entry'; row.id = 'irow-'+id;
+        row.innerHTML = `
+          <input class="form-input i-class" id="ic-${id}" type="text"
+            placeholder="e.g. SILVER, gold, Recliner…" value="${escAttr(cls||'')}" />
+          <input class="form-input i-price" id="ip-${id}" type="text"
+            placeholder="e.g. ₹200, Rs. 300, 450.00" value="${escAttr(price||'')}" />
+          <button type="button" class="remove-btn" onclick="removeImpRow(${id})" title="Remove">×</button>`;
+        wrap.appendChild(row);
+        syncImpBtns();
+      }
+
+      function removeImpRow(id) {
+        const el = document.getElementById('irow-'+id);
+        if (el) el.remove();
+        syncImpBtns();
+      }
+
+      function syncImpBtns() {
+        const rows = document.querySelectorAll('.imp-row-entry');
+        rows.forEach(r => {
+          const b = r.querySelector('.remove-btn');
+          if (b) b.style.display = rows.length===1 ? 'none' : 'flex';
+        });
+      }
+
+      function getImpRows() {
+        return Array.from(document.querySelectorAll('.imp-row-entry')).map(r => ({
+          seat_class: r.querySelector('.i-class').value,
+          price:      r.querySelector('.i-price').value,
+        }));
+      }
+
+      const DEMO = [
+        {seat_class:'Silver',   price:'200'},
+        {seat_class:'SILVER',   price:'Rs. 200.00'},   // exact dup
+        {seat_class:'  gold  ', price:'₹300'},
+        {seat_class:'Gold',     price:'250'},           // conflict
+        {seat_class:'Recliner', price:'Rs. 450'},
+        {seat_class:'recliner', price:'₹450.00'},       // exact dup
+        {seat_class:'VIP',      price:'-500'},          // negative
+        {seat_class:'Premium',  price:''},              // blank price
+        {seat_class:'',         price:'100'},           // blank name
+        {seat_class:'Club',     price:'abc'},           // malformed
+      ];
+
+      function loadDemoData() {
+        document.getElementById('imp-rows-wrap').innerHTML = '';
+        impRowCount = 0;
+        DEMO.forEach(r => addImportRow(r.seat_class, r.price));
+        // reset report
+        document.getElementById('imp-report').classList.remove('visible');
+        document.getElementById('apply-banner').classList.remove('visible');
+        document.getElementById('apply-info').classList.remove('visible');
+        _pendingCleanRows = [];
+      }
+
+      async function runImport() {
+        const errEl = document.getElementById('imp-err');
+        errEl.classList.remove('visible');
+        document.getElementById('imp-report').classList.remove('visible');
+        document.getElementById('apply-banner').classList.remove('visible');
+        document.getElementById('apply-info').classList.remove('visible');
+        _pendingCleanRows = [];
+
+        const rows = getImpRows().filter(r => r.seat_class||r.price);
+        if (!rows.length) { showErr(errEl,'Add at least one row before importing.'); return; }
+
+        setBusy('import-btn','import-txt','import-spin', true);
+        try {
+          const res = await apiFetch('/api/import', {rows});
+          if (!res.success) { showErr(errEl, res.message); return; }
+          renderReport(res.report);
+          _pendingCleanRows = res.report.clean_rows || [];
+
+          if (_pendingCleanRows.length > 0) {
+            const sub = `${_pendingCleanRows.length} clean tier(s) ready — set the default seat availability and apply.`;
+            document.getElementById('apply-banner-sub').textContent = sub;
+            document.getElementById('apply-banner').classList.add('visible');
+          }
+        } catch(e) { showErr(errEl,'Network error. Please try again.'); }
+        finally { setBusy('import-btn','import-txt','import-spin', false); }
+      }
+
+      function renderReport(report) {
+        const stats = document.getElementById('stat-row');
+        stats.innerHTML = `
+          <div class="stat-chip tot"><div class="n">${report.total_records}</div><div class="l">Total Rows</div></div>
+          <div class="stat-chip ok"> <div class="n">${report.imported_count}</div><div class="l">Imported</div></div>
+          <div class="stat-chip dup"><div class="n">${report.deduplicated_count}</div><div class="l">Duplicates</div></div>
+          <div class="stat-chip bad"><div class="n">${report.rejected_count}</div><div class="l">Rejected</div></div>`;
+
+        const body = document.getElementById('report-body');
+        body.innerHTML = '';
+
+        if (report.clean_rows?.length) {
+          body.innerHTML += `<div class="report-sec">✅ Clean — will be imported (${report.clean_rows.length})</div>`;
+          body.innerHTML += tbl(
+            ['Row','Original Class','Original Price','Normalised Name','Normalised Price','Status'],
+            report.clean_rows.map(r => [
+              r.row_index, esc(r.original_name??''), esc(r.original_price??''),
+              esc(r.normalized_name), `₹${r.normalized_price}`,
+              '<span class="badge ok">Clean</span>'
+            ])
+          );
+        }
+        if (report.duplicate_records?.length) {
+          body.innerHTML += `<div class="report-sec" style="margin-top:18px;">⚠️ Duplicates skipped (${report.duplicate_records.length})</div>`;
+          body.innerHTML += tbl(
+            ['Row','Original Class','Original Price','Reason'],
+            report.duplicate_records.map(r => [
+              r.row_index, esc(r.original_name??''), esc(r.original_price??''),
+              `<span class="reason">${esc(r.reason)}</span>`
+            ])
+          );
+        }
+        if (report.rejected_records?.length) {
+          body.innerHTML += `<div class="report-sec" style="margin-top:18px;">❌ Rejected (${report.rejected_records.length})</div>`;
+          body.innerHTML += tbl(
+            ['Row','Original Class','Original Price','Reason'],
+            report.rejected_records.map(r => [
+              r.row_index, esc(r.original_name??''), esc(r.original_price??''),
+              `<span class="reason">${esc(r.reason)}</span>`
+            ])
+          );
+        }
+
+        document.getElementById('imp-report').classList.add('visible');
+        document.getElementById('imp-report').scrollIntoView({behavior:'smooth',block:'nearest'});
+      }
+
+      /* ── Apply cleaned price list to booking engine ───────────── */
+      async function applyPriceList() {
+        if (!_pendingCleanRows.length) return;
+
+        const infoEl = document.getElementById('apply-info');
+        const errEl  = document.getElementById('imp-err');
+        infoEl.classList.remove('visible');
+        errEl.classList.remove('visible');
+
+        const avail = parseInt(document.getElementById('avail-input').value,10) || 10;
+        setBusy('apply-btn','apply-txt','apply-spin', true);
+
+        try {
+          const res = await apiFetch('/api/apply-price-list', {
+            clean_rows: _pendingCleanRows,
+            default_availability: avail,
+          });
+
+          if (!res.success) { showErr(errEl, res.message); return; }
+
+          // Update local TIERS array with what the server confirmed
+          TIERS = res.config.tiers;
+
+          // Refresh booking tab live — tier cards + dropdowns
+          rebuildTierGrid();
+          rebuildDropdowns();
+
+          // Mark config source badge
+          const badge = document.getElementById('config-source-badge');
+          const badgeTxt = document.getElementById('config-source-text');
+          badge.classList.add('imported');
+          badgeTxt.textContent = `Using imported price list — ${TIERS.length} tier(s) active`;
+
+          // Hide apply banner
+          document.getElementById('apply-banner').classList.remove('visible');
+
+          // Show success
+          infoEl.textContent = `✅ ${res.message} Switch to "Book Tickets" to use the new tiers.`;
+          infoEl.classList.add('visible');
+
+        } catch(e) { showErr(errEl,'Network error. Please try again.'); }
+        finally { setBusy('apply-btn','apply-txt','apply-spin', false); }
+      }
+
+      /* ── Helpers ──────────────────────────────────────────────── */
+      async function apiFetch(path, body) {
+        const r = await fetch(path, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        return r.json();
+      }
+
+      function setBusy(btnId, txtId, spinId, busy) {
+        const btn = document.getElementById(btnId);
+        const txt = document.getElementById(txtId);
+        const spn = document.getElementById(spinId);
+        if (btn) btn.disabled = busy;
+        if (txt) txt.style.display = busy ? 'none' : '';
+        if (spn) spn.style.display = busy ? 'block' : 'none';
+      }
+
+      function showErr(el, msg) { el.textContent = msg; el.classList.add('visible'); }
+
+      function fmt(v) { return parseFloat(v||0).toFixed(2); }
+
+      function esc(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+      function escAttr(s) { return String(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+      function tbl(headers, rows) {
+        let h = '<table class="rtbl"><thead><tr>';
+        headers.forEach(x => { h += `<th>${x}</th>`; });
+        h += '</tr></thead><tbody>';
+        rows.forEach(cells => {
+          h += '<tr>';
+          cells.forEach(c => { h += `<td>${c}</td>`; });
+          h += '</tr>';
+        });
+        return h + '</tbody></table>';
+      }
+
+      /* ── Init ─────────────────────────────────────────────────── */
+      window.addEventListener('DOMContentLoaded', () => {
+        addTicketRow();           // one booking row to start
+        loadDemoData();           // pre-seed importer with messy demo rows
+        updateCouponUI();
+      });
     </script>
   </body>
 </html>
