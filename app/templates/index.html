@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multiplex Pricing Engine</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f4f6f8;
+        margin: 0;
+        padding: 40px;
+        color: #1f2937;
+      }
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        background: #fff;
+        border-radius: 12px;
+        padding: 30px;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+      }
+      h1 { margin-top: 0; }
+      .tier-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin: 20px 0;
+      }
+      .tier-card {
+        border: 1px solid #d1d5db;
+        border-radius: 10px;
+        padding: 18px;
+        background: #f9fafb;
+      }
+      .controls {
+        display: grid;
+        gap: 16px;
+        margin: 20px 0;
+      }
+      label {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 600;
+      }
+      select, input, button {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+        font-size: 1rem;
+      }
+      button {
+        background: #2563eb;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .checkbox-row input { width: auto; }
+      .bill {
+        margin-top: 28px;
+        border-top: 2px solid #e5e7eb;
+        padding-top: 18px;
+      }
+      .bill-row {
+        display: flex;
+        justify-content: space-between;
+        margin: 8px 0;
+      }
+      .totals {
+        font-weight: 700;
+        border-top: 1px solid #cbd5e1;
+        margin-top: 16px;
+        padding-top: 12px;
+      }
+      .error { color: #b91c1c; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Multiplex Booking Counter</h1>
+
+      <div class="tier-grid">
+        {% for tier in tiers %}
+        <div class="tier-card">
+          <strong>{{ tier.name }}</strong><br />
+          ₹{{ tier.price }}<br />
+          Availability: {{ tier.availability }}
+        </div>
+        {% endfor %}
+      </div>
+
+      <form id="booking-form">
+        <div class="controls">
+          <div>
+            <label for="tier">Ticket tier</label>
+            <select id="tier">
+              {% for tier in tiers %}
+              <option value="{{ tier.name }}">{{ tier.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div>
+            <label for="quantity">Quantity</label>
+            <input id="quantity" type="number" min="1" value="1" />
+          </div>
+
+          <div class="checkbox-row">
+            <input id="festival" type="checkbox" />
+            <label for="festival">Apply festival discount</label>
+          </div>
+
+          <div class="checkbox-row">
+            <input id="member" type="checkbox" />
+            <label for="member">Member discount</label>
+          </div>
+
+          <button type="submit">Generate bill</button>
+        </div>
+      </form>
+
+      <div id="error" class="error"></div>
+
+      <div class="bill" id="bill">
+        <div class="bill-row"><span>Base subtotal</span><span>₹0.00</span></div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById('booking-form');
+      const bill = document.getElementById('bill');
+      const errorBox = document.getElementById('error');
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        errorBox.textContent = '';
+        bill.innerHTML = '';
+
+        const payload = {
+          tier: document.getElementById('tier').value,
+          quantity: Number(document.getElementById('quantity').value),
+          member: document.getElementById('member').checked,
+          festival_offer: document.getElementById('festival').checked,
+        };
+
+        const response = await fetch('/api/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          errorBox.textContent = data.message || 'Unable to generate a bill.';
+          return;
+        }
+
+        const billData = data.bill;
+        const lines = [
+          { label: 'Base subtotal', value: formatMoney(billData.base_subtotal) },
+          { label: 'Festival discount', value: '-' + formatMoney(billData.festival_discount) },
+          { label: 'Member discount', value: '-' + formatMoney(billData.member_discount) },
+          { label: 'Subtotal after discounts', value: formatMoney(billData.subtotal_after_discounts) },
+          { label: 'Convenience fee', value: formatMoney(billData.convenience_fee) },
+          { label: 'GST', value: formatMoney(billData.gst) },
+          { label: 'Final total', value: formatMoney(billData.final_total), className: 'totals' },
+        ];
+
+        lines.forEach((line) => {
+          const row = document.createElement('div');
+          row.className = 'bill-row' + (line.className ? ' ' + line.className : '');
+          row.innerHTML = '<span>' + line.label + '</span><span>' + line.value + '</span>';
+          bill.appendChild(row);
+        });
+      });
+
+      function formatMoney(value) {
+        const numeric = Number(value || 0);
+        return '₹' + numeric.toFixed(2);
+      }
+    </script>
+  </body>
+</html>
